@@ -1,0 +1,41 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+model User {
+    id             String   @id @default(cuid())
+
+    email          String   @unique
+    username       String   @unique
+    password       String
+
+    phone          String?  @unique
+
+    emailVerified  Boolean  @default(false)
+    phoneVerified  Boolean  @default(false)
+
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+
+    sessions Session[]
+}
+
+model Session {
+    id              String @id @default(uuid())
+
+    userId          String
+    user User       @relation(fields: [userId], references: [id])
+
+    tokenId         String @unique
+    refreshToken    String
+
+    userAgent       String?
+    ip              String?
+
+    createdAt       DateTime @default(now())
+    expiresAt       DateTime
+}
