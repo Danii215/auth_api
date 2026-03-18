@@ -52,6 +52,8 @@ type Mutation {
   refreshToken(input: RefreshTokenInput!): AccessTokenPayload!
   disconnectSession(sessionId: String!): Boolean!
   disconnectAllSessions: Boolean!
+  sendEmailVerification: Boolean!
+  verifyEmail(tokenId: String!): Boolean!
 }
 
 input RegisterInput {

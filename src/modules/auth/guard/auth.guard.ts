@@ -5,6 +5,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { GqlExecutionContext } from '@nestjs/graphql';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as jwt from 'jsonwebtoken';
 
@@ -55,6 +56,29 @@ export class AuthGuard implements CanActivate {
         }
 
         ctx.req.user = { id: payload.sub, sessionId: session.id };
+
+        const user = await this.prisma.user.findFirst({
+            where: { id: payload.sub },
+            select: { emailVerified: true },
+        });
+
+        if (!user) throw new UnauthorizedException('User not found');
+
+        if (!user.emailVerified) {
+            const gql = GqlExecutionContext.create(context);
+            const fieldName = gql.getInfo?.()?.fieldName;
+
+            const allowlist = new Set([
+                'sendEmailVerification',
+                'verifyEmail',
+                'logout',
+            ]);
+
+            if (!fieldName || !allowlist.has(fieldName)) {
+                throw new UnauthorizedException('Email not verified');
+            }
+        }
+
         return true;
     }
 }

@@ -13,19 +13,7 @@ import {
     Session,
 } from './dto';
 import { Throttle } from '@nestjs/throttler';
-
-interface GqlContext {
-    req: {
-        ip: string;
-        headers: {
-            'user-agent': string;
-        };
-        user: {
-            id: string;
-            sessionId: string;
-        };
-    };
-}
+import type { GqlContext } from '../graphql/gql.context';
 
 @Resolver()
 export class AuthResolver {
@@ -83,5 +71,18 @@ export class AuthResolver {
             ctx.req.user.id,
             ctx.req.user.sessionId,
         );
+    }
+
+    @Mutation(() => Boolean)
+    @UseGuards(AuthGuard)
+    @Throttle({ default: { limit: 3, ttl: 60000 } })
+    sendEmailVerification(@Context() ctx: GqlContext) {
+        return this.authService.sendEmailVerification(ctx.req.user.id);
+    }
+
+    @Mutation(() => Boolean)
+    @Throttle({ default: { limit: 10, ttl: 60000 } })
+    verifyEmail(@Args('tokenId') tokenId: string) {
+        return this.authService.verifyEmail(tokenId);
     }
 }

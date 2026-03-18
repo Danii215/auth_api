@@ -1,14 +1,10 @@
 import { UseGuards } from '@nestjs/common';
-import { Resolver, Query } from '@nestjs/graphql';
+import { Resolver, Query, Context } from '@nestjs/graphql';
 
 import { UserService } from './user.service';
 import { User } from './dto';
-import { AuthGuard, CurrentUser } from '../auth/guard';
-
-interface UserJwtPayload {
-    sub: string;
-    sessionId: string;
-}
+import { AuthGuard } from '../auth/guard';
+import type { GqlContext } from '../graphql/gql.context';
 
 @Resolver(() => User)
 export class UserResolver {
@@ -16,7 +12,7 @@ export class UserResolver {
 
     @Query(() => User)
     @UseGuards(AuthGuard)
-    me(@CurrentUser() user: UserJwtPayload) {
-        return this.userService.findById(user.sub);
+    me(@Context() ctx: GqlContext) {
+        return this.userService.findById(ctx.req.user.id);
     }
 }

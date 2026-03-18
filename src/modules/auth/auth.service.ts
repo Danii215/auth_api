@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 
+import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterInput, Session } from './dto';
 
@@ -16,6 +17,7 @@ export class AuthService {
     constructor(
         private prisma: PrismaService,
         private jwt: JwtService,
+        private emailService: EmailService,
     ) {}
 
     async register(input: RegisterInput, ip: string, userAgent: string) {
@@ -36,6 +38,8 @@ export class AuthService {
                 password: hashedPassword,
             },
         });
+
+        await this.sendEmailVerification(user.id);
 
         return this.createSession(user.id, ip, userAgent);
     }
@@ -185,5 +189,59 @@ export class AuthService {
             userAgent: s.userAgent ?? undefined,
             current: s.id === currentSessionId,
         }));
+    }
+
+    async sendEmailVerification(userId: string): Promise<boolean> {
+        const tokenId = crypto.randomUUID();
+        const user = await this.prisma.user.findFirst({
+            where: { id: userId },
+        });
+        if (!user) throw new UnauthorizedException('User not found');
+        if (user.emailVerified) return true;
+
+        await this.prisma.emailVerification.create({
+            data: {
+                userId,
+                tokenId,
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            },
+        });
+
+        await this.emailService.sendEmail(
+            user.email,
+            'Email Verification',
+            `Click the link below to verify your email: ${process.env.FRONTEND_URL}/verify-email?tokenId=${tokenId}`,
+        );
+
+        return true;
+    }
+
+    async verifyEmail(tokenId: string): Promise<boolean> {
+        const verificationEmail = await this.prisma.emailVerification.findFirst(
+            {
+                where: { tokenId },
+            },
+        );
+
+        if (!verificationEmail)
+            throw new UnauthorizedException('Invalid verification token');
+
+        if (verificationEmail.expiresAt < new Date())
+            throw new UnauthorizedException('Verification token expired');
+
+        if (verificationEmail.verified)
+            throw new UnauthorizedException('Email already verified');
+
+        await this.prisma.user.update({
+            where: { id: verificationEmail.userId },
+            data: { emailVerified: true },
+        });
+
+        await this.prisma.emailVerification.update({
+            where: { tokenId },
+            data: { verified: true, verifiedAt: new Date() },
+        });
+
+        return true;
     }
 }

@@ -8,11 +8,13 @@ import { PrismaModule } from '..';
 
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthGuard } from './guard';
+import { EmailModule } from '../email/email.module';
 
 @Module({
     imports: [
         PrismaModule,
         ConfigModule,
+        EmailModule,
         JwtModule.registerAsync({
             imports: [ConfigModule],
             inject: [ConfigService],

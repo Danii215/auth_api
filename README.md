@@ -1,98 +1,134 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+## `core/` — Backend (NestJS + GraphQL)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Esta pasta contém o **backend** do projeto: uma API **GraphQL** em **NestJS**, rodando em **Fastify**, com:
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+- **Auth**: login/registro com **JWT (access token)** + **sessões** persistidas no banco, e **refresh token** rotativo.
+- **Persistência**: **Prisma** usando **PostgreSQL** (via `@prisma/adapter-pg`).
+- **Rate limit**: `@nestjs/throttler` com storage em **Redis** (para funcionar em ambiente distribuído).
+- **E-mail**: envio via **Resend** (usado para verificação de e-mail).
 
-## Description
+### Estrutura da pasta
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **`src/main.ts`**: bootstrap do Nest com `@nestjs/platform-fastify` e `trustProxy`.
+- **`src/app.module.ts`**: módulo raiz; registra GraphQL, config, throttling, prisma e módulos de domínio.
+- **`src/modules/`**: módulos de domínio/infra:
+    - **`graphql/`**: configuração do GraphQL (Apollo). Gera schema automaticamente.
+    - **`auth/`**: resolver + service + guard. Gerencia credenciais, tokens e sessões.
+    - **`user/`**: resolver/service para perfil do usuário (ex.: `me`).
+    - **`prisma/`**: `PrismaService` e módulo.
+    - **`throttler/`**: configuração de rate limit com Redis.
+    - **`config/`**: wrapper do `@nestjs/config` (global).
+    - **`email/`**: serviço de envio de e-mail (Resend).
+- **`src/common/GqlThrottlerGuard.ts`**: adaptação do throttler para contexto GraphQL.
+- **`prisma/schema.prisma`**: schema do banco e modelos (`User`, `Session`, `EmailVerification`).
+- **`prisma/migrations/`**: migrations do Prisma.
+- **`dist/`**: build gerado pelo Nest (não edite manualmente).
+- **`redis.sh`**: atalho simples para subir um Redis via Docker.
 
-## Project setup
+### GraphQL (schema e contexto)
+
+- **Schema**: é gerado automaticamente em `src/schema.gql` (arquivo marcado como **auto-gerado**).
+- **Contexto**: o GraphQL injeta `req`/`res` do Fastify (ver `src/modules/graphql/graphql.module.ts`).
+
+### Autenticação e sessões (visão geral)
+
+- **Access token (JWT)**: emitido com `sub` (userId) e `sessionId`. Validade configurada para **15 minutos**.
+- **Refresh token**: formato `tokenId.secret`.
+    - No banco, o `secret` é armazenado **hasheado**.
+    - No refresh, o `tokenId` é **rotacionado** e o `secret` também.
+- **Sessão vinculada ao dispositivo**: o guard compara `ip` e `user-agent` atuais com o que foi salvo na sessão (se existirem), para mitigar roubo de token.
+
+### Operações GraphQL disponíveis
+
+Com base em `src/schema.gql`, as principais operações são:
+
+- **Queries**
+    - **`me`**: retorna o usuário autenticado.
+    - **`activeSessions`**: lista sessões ativas (marcando a sessão atual).
+- **Mutations**
+    - **`register`**: cria usuário, envia verificação de e-mail e cria sessão.
+    - **`login`**: autentica e cria sessão.
+    - **`logout`**: encerra a sessão atual.
+    - **`refreshToken`**: renova access/refresh token (rotacionando o refresh).
+    - **`disconnectSession`** / **`disconnectAllSessions`**: encerra sessões.
+    - **`sendEmailVerification`** / **`verifyEmail`**: fluxo de verificação por e-mail.
+
+- **TODO**
+    - **Senha**
+        - [ ] Solicitar redefinição de senha (Esqueci a senha)
+        - [ ] Redefinir senha (Redefinir senha)
+        - [ ] Alterar senha (Alterar senha)
+
+    - **Sessões**
+        - [ ] Ao invés de deletar do banco, marcar como invalidada (expiresAt < now())
+
+    - **E-mail**
+        - [ ] Invalidar tokens antigos ao reenviar (manter só o último válido)
+        - [ ] Verificar se o e-mail é válido (usar regex e endereços confiáveis)
+
+    - **Usuário**
+        - [ ] Adicionar mutations para atualizar perfil (username, displayName, avatarUrl, dentre outros no futuro)
+        - [ ] Adicionar verificação de telefone
+
+    - **API**
+        - [ ] Desabilitar graphql playground em produção
+        - [ ] Adicionar headers de segurança (CORS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, etc.)
+        - [ ] Adicionar logging
+        - [ ] Adicionar health check
+        - [ ] Adicionar metrics
+        - [ ] Adicionar tracing
+        - [ ] Adicionar seed
+        - [ ] Centralizar variáveis de ambiente e validar na inicialização
+        - [ ] Fallback se o Redis cair
+        - [ ] Testes
+
+### Variáveis de ambiente (necessárias)
+
+Este serviço depende de variáveis em runtime (ex.: `.env`). Principais:
+
+- **`PORT`**: porta do servidor (default `3000`).
+- **`DATABASE_URL`**: conexão do Postgres (usada pelo `pg`/Prisma).
+- **`JWT_SECRET`**: segredo para assinar/verificar JWT.
+- **`FRONTEND_URL`**: base URL do frontend (usado no link de verificação de e-mail).
+- **`REDIS_URL`**: host do Redis (ex.: `localhost`).
+- **`REDIS_PORT`**: porta do Redis (default `6379`).
+- **`EMAIL_HOST`**: remetente usado pelo Resend (campo `from`).
+- **`EMAIL_KEY`**: API key do Resend.
+
+### Como rodar localmente
+
+Instalar dependências:
 
 ```bash
-$ pnpm install
+pnpm install
 ```
 
-## Compile and run the project
+Subir Redis (opcional, mas recomendado por causa do throttling):
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+./redis.sh
 ```
 
-## Run tests
+Rodar em dev (watch):
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm run start:dev
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Build e produção:
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm run build
+pnpm run start:prod
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Scripts úteis (package.json)
 
-## Resources
+- **`pnpm run start:dev`**: servidor com watch.
+- **`pnpm run lint`**: eslint (com `--fix`).
+- **`pnpm run test`** / **`pnpm run test:e2e`**: testes.
 
-Check out a few resources that may come in handy when working with NestJS:
+### Notas rápidas
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **`node_modules/`** está dentro de `core/` (projeto Node isolado).
+- O schema GraphQL em `src/schema.gql` é **gerado**; a fonte de verdade são os decorators GraphQL nos resolvers/DTOs.
